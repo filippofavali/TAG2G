@@ -1,0 +1,15 @@
+# Changes from FineMotion implementation
+
+
+File -  Changes 
+
+ >> motion_utils.py 
+	joints --> included legs' joints
+    added some utils
+
+ >> utils.py
+
+ >> train_vqvae.py
+	input_dimension: 54 to 74 (expmap_TAG2G representation)
+
+ >> system.py changed to use also loss over vel and acc

@@ -1,0 +1,43 @@
+info from every dir in the "FeaturesDiffuseStyle" dir
+
+--data
+It is used to produce samples at inference time starting from own audio and text transcription of that audio
+
+--diffusion
+Contains utils, losses, logger used inside diffusion process into the diffusion model
+
+--model
+Contains mcm.py file (motion diffusion model) and local attention files
+
+--myduffusion_beat_twh		# every change into a comment at the start
+directory with training file and config stuff
+
+	-- data_loader --> inside here there is the standardization of inputs to the net, i don't know if it will work with codebooks value and not on some kind of rotations as used in diffuse style gesture
+
+--process
+This directory contains preprocess stuff, quite sure it will be unused --> then deleted
+
+--train
+Contains train loop and train platform files
+	-- into train loop need to change the inputs from h5 file loader
+
+
+
+ ======= run this command to train DiffusionModel ======= 
+
+python end2end.py --config=./configs/DiffuseStyleGesture.yml --gpu 0  --use_vqvae_decoder
+
+
+ ======= run this command to inference DiffusionModel =======
+
+ ** conda activate TAG2G --> this is not working ... at inference time
+ ii - maybe I was using diffuseStyleGesture ??
+
+- not trained with decoder
+python sample.py --config=configs/DiffuseStyleGesture.yml --tst_path=data/val_features --gpu 0 --model_path 'TWH_mymodel4_512_v0/model003825000.pt' --max_len 0 --tst_prefix 'val_2023_v0_000_main-agent'
+python sample.py --config=configs/DiffuseStyleGesture.yml --gpu 0 --model_path 'TWH_mymodel4_512_v0/model001200000.pt' --max_len 0 --tst_prefix 'val_2023_v0_014_main-agent'
+
+- trained with decoder
+python sample.py --config=configs/DiffuseStyleGesture.yml --tst_path=data/val_features --gpu 0 --model_path 'TWH_mymodel4_512/model000166500.pt' --max_len 0 --tst_prefix 'val_2023_v0_000_main-agent'
+python sample.py --config=configs/DiffuseStyleGesture.yml --gpu 0 --model_path 'TWH_mymodel4_512/model000166500.pt' --max_len 0 --tst_prefix 'val_2023_v0_014_main-agent'
+

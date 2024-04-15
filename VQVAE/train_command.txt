@@ -1,0 +1,4 @@
+Run this command in the console to start VQVAE training
+
+python train_vqvae.py --trn_folder ./vqvae_data/trn/ --val_folder ./vqvae_data/val/ --serialize_dir ./result/vqvae \
+    --force --batch_size 1024  --cuda_n 0

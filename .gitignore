@@ -1,0 +1,28 @@
+# Ignore all __pycache__ directories and .pyc files
+__pycache__/
+*.pyc
+
+# Ignore the model file
+crawl-300d-2M.vec
+
+# Ignore the .idea directory
+.idea/
+
+# Ignore the data directory
+data/
+
+# Ignore the pymo_TWH folder and its __pycache__ subfolder
+FeaturesDiffuseStyle/process/pymo_TWH/
+FeaturesDiffuseStyle/process/pymo_TWH/__pycache__/
+FeaturesDiffuseStyle/mydiffusion_beat_twh/TWH_mymodel4_512_cinematic/
+FeaturesDiffuseStyle/mydiffusion_beat_twh/TWH_mymodel4_512_v0/
+FeaturesDiffuseStyle/data/
+
+# Ignore VQVAE stuff
+VQVAE/vqvae_data/
+VQVAE/__pycache__/
+VQVAE/results/
+
+
+# Ignore tests
+Test/
