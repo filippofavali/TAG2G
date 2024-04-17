@@ -40,7 +40,7 @@ also to produce both val and trn dataset features at call and not cahnging param
     python end2end.py
 
 
-# Diffusion model inferece (generation of new samples)
+# Diffusion model inference (generation of new samples)
 
 (from same folder : FeaturesDiffuseStyle/mydiffusion_beat_twh)
 
