@@ -1,6 +1,5 @@
 from VQVAE.vqvae_utils.utils import *
 from VQVAE.system import VQVAESystem
-from Config.FeaturesConfig import features_config
 import os
 import torch
 import numpy as np
@@ -15,10 +14,10 @@ Should be usefull in two case scenario:
 
 class GestureProcessor:
 
-    def __init__(self, fparams, device):
+    def __init__(self, fparams):
 
         self.fparams = fparams
-        self.device = device
+        self.device = fparams.device
         self.expmap_pipeline = create_TAG2G_pipeline()
         self.vqvae = self.load_vqvae()
         self.codebook = self.vqvae.vqvae.vq.embedding.weight
@@ -47,10 +46,11 @@ class GestureProcessor:
         gesture_features_npy = torch.tensor(gesture_features_npy, dtype=torch.double).to(self.device)
         gesture_features_npy = gesture_features_npy.permute(0, 2, 1)    # needs to be total_window, 54, 18 otherwise won't fit the model
 
+        # TODO: Do the following with a specific function like self.retrieve_closest_code
         # retrieving closer codebook entry for each gesture window from learnt codebook
         with torch.no_grad():
 
-            gesture_features_npy = self.vqvae .vqvae.encoder(gesture_features_npy)
+            gesture_features_npy = self.vqvae.vqvae.encoder(gesture_features_npy)
             vq_vector = self.vqvae.vqvae.vq(gesture_features_npy, training=False)
             distances = torch.sum(gesture_features_npy ** 2, dim=1, keepdim=True) + \
                         torch.sum(self.codebook ** 2, dim=1) - 2 * \
@@ -77,20 +77,23 @@ class GestureProcessor:
                             input_dim=vqvae_params["input_dim"],
                             hidden_dim=vqvae_params["hidden_dim"],
                             max_frames=vqvae_params["motion_window_length"])
-        print(f"Loading vqvae_cinematic parameters from '{checkpoint}'")
-        checkpoint = torch.load(checkpoint, map_location="cpu")
-        state_dict = checkpoint["state_dict"]
+
+        weights = torch.load(checkpoint, map_location="cpu")
+        state_dict = weights["state_dict"]
         model.load_state_dict(state_dict)
         model.to(self.device)
+        print(f"VQVAE correctly loaded from {checkpoint}")
 
         return model
 
 
 if __name__ == "__main__":
 
+    from Config.FeaturesConfig import FeaturesConfig
+
     key1 = True  # use this to test load hparams, load selected model and so on from feature config
     if key1:
-        fparams = features_config()
+        fparams = FeaturesConfig()
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
         bvh_dir = r"C:\Users\faval\genea2023_dataset\trn\main-agent\bvh"

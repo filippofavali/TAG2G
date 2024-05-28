@@ -1,31 +1,43 @@
 # v0: xyz, v1: ZEGGS by yongkang, v1: ZEGGS by yongkang bugfix
+# v0: from DiffuseStyleGesture, dyadic: introduction of dyadic input
 # edited Favali, 03-01-2024
 
-h5file: "data/trn_features/TWH-trn_v0_nocinematic.h5"   # "../process/speaker_2_10_v0.h5"
+# === TO BE CHANGED FROM ONE MODEL TO ANOTHER ===
+
+h5file: "data/trn_features_with_wavlm/TWH-trn_with_wavlm.h5"   # "../process/speaker_2_10_v0.h5"
 dataset: "trn"
-speakers: ("main-agent", "interloctr")
-n_poses: 8                            # was 150, taken 8 because 8*18 = 144 nearly 150
+name: "FeaturesDiffuseStyle"          # "FeaturesDiffuseStyle", "DiffuseStyleGesture", "DiffuseStyleGesture+"
+version: "v0_dyadic"                         # "v0", "v0_dyadic"
+save_dir: "../results"
+max_num_steps: 5000000                # max reached during training of thesis pipeline
+save_iters: 200000                    # To avoid too many checkpoints
+description: "_wavlm"                 # To describe the directory where we are going to store model's checkpoints
+
+# === OTHER PARAMETERS ===
+
+speaker1: "main-agent"
+speaker2: "interloctr"
+speakers: None                        # this is going to be compiled from end2end.py script
+label1: 'y'
+label2: 'y_inter1'
+agent_labels: None                    # to be used when building the _cond dict and model_kwargs_ dict
+n_poses: 8                            # was 150, taken 8 because 8*18frames (per each code) = 144 nearly 150
 motion_resampling_framerate: 30       # 20 -> 60
-motion_dim: 256                       # 684/1141
-njoints: 768                          # 684 * 3 = 2052 multiplied by 3 because of the pos, vel, acc in the vector 'gesture'
+motion_dim: 256                       # dimension of VQVAE code
+njoints: 768                          # 256 * 3 = 768 multiplied by 3 because of the pos, vel, acc in the vector 'gesture'
 latent_dim: 512                       # 256 -> 512, 384
 n_seed: 1                             # was 30 --> changed to 1 features=18frames
 cond_mask_prob: 0.1
 style_dim: 17                         # was 2 to use only dummy spakers
-audio_feature_dim: 410                # was 1434 = 1133 + 301; audio_f + text_f
+audio_feature_dim: 1434               # 410 (no wavlm) or 1434 = 1132 + 302
 audio_feat_dim_latent: 128            # was 64 -> 128, 96
 motion_window_length: 18              # length of window motion processing
-num_workers: 4 
-batch_size: 128                       # depends on GPU
-log_interval: 50
+num_workers: 4
+batch_size: 360                       # depends on GPU
+log_interval: 50                      # logging interval when training
 weight_decay: 0.0
 lr_anneal_steps: 0
-save_dir: "../results"
 audio_feat: "wavlm"
-max_num_steps: 50000000
-save_iters: 150000
-name: "FeaturesDiffuseStyle"          # "DiffuseStyleGesture", "DiffuseStyleGesture+", "DiffuseStyleGesture++"
-version: "v0"                         # "v0, v1"
 
 # added to cope with TAG2G model pipeline
 expmap_74j_pipe: "Utils/pipeline_expmap_74joints.sav"
@@ -41,6 +53,7 @@ vq_hidden_dim: 1024
 vq_input_dim: 74
 vqvae_checkpoint: "VQVAE/results/vqvae_cinematic"
 
+# Diffusion parameters
 lr: 0.00003     # 0.00003 ->
 betas: [0.5, 0.999]
 milestones: [100, 200]

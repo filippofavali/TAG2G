@@ -189,15 +189,15 @@ def gesture_smoothing(sample):
     return gesture
 
 
-def save_gesture_as_bvh(mocap_data:MocapData, file_path:str, file_name:str):
+def save_gesture_as_bvh(mocap_data:MocapData, save_dir:str, file_name:str):
 
-    assert os.path.isdir(file_path), f"Provided file path is not an existing directory"
+    assert os.path.isdir(save_dir), f"Provided file path is not an existing directory"
 
     # instancing writer and write to a bvh
     writer = BVHWriter()
 
-    dump_file = os.path.join(file_path, f"{file_name}.bvh")
-    print(f"Saving motion to '{dump_file}'")
+    dump_file = os.path.join(save_dir, f"{file_name}.bvh")
+    print(f"Saving gesture to '{dump_file}'")
     with open(dump_file, "w") as file:
         writer.write(X=mocap_data,
                      ofile=file,

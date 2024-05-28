@@ -2,6 +2,10 @@ import configargparse
 import argparse
 
 # edited Favali, 03-01-2024
+# Combined with TAG2G pipeline, inroduced vqvae decoder possibility
+# editied Favali, 24-04-2024
+# Introduction of dyadic input to the model
+
 
 def str2bool(v):
     """ from https://stackoverflow.com/a/43357954/1361529 """
@@ -22,6 +26,7 @@ def parse_args():
     parser.add_argument('--no_cuda', type=list, default=['2'])
     parser.add_argument('--batch_size', type=int)
     parser.add_argument('--use_vqvae_decoder', action='store_true', default=False)
+    parser.add_argument('--dyadic', action="store_true", default=False)
     
     args = parser.parse_args()
     return args

@@ -15,10 +15,13 @@ import os.path
 import sys
 import librosa
 import librosa.feature
+import torch
+import torch.nn.functional as F
 import parselmouth as pm
 import numpy as np
 from pydub import AudioSegment
-from Config.FeaturesConfig import features_config
+from Config.FeaturesConfig import FeaturesConfig
+from WavLM.WavLM import WavLM, WavLMConfig
 
 
 class AudioProcessor:
@@ -31,30 +34,78 @@ class AudioProcessor:
         *) Load the sample related to a given time_stamp
     """
 
-    def __init__(self, audio_parameters:dict):
+    def __init__(self, fparams):
 
+        self.device = fparams.device
+        audio_parameters = fparams.audio_parameters
         self.NFFT = audio_parameters["NFFT"]
         self.MFCC_INPUTS = audio_parameters["MFCC_INPUTS"]
         self.HOP_LENGTH = audio_parameters["HOP_LENGTH"]
         self.DIM = audio_parameters["DIM"]
+        self.wavlm_model, self.cfg = self.load_wavlm(path_to_checkpoint=audio_parameters["WavLM"])
+
+        # DONE: integration of WavLM when encoding audio features
+
 
     def __call__(self, audio_path):
 
-        print(f"Audio working '{audio_path}'")
-        audio, sr = self.load_audio(audio_path)
+        assert os.path.isfile(audio_path), f"Provided audio path is not a file"
+
+        # extracting deterministic spectral features
+        audio, sr = librosa.load(audio_path, sr=None)
         prosody = self.extract_prosodic_features(audio_path)
         mfcc = self.calculate_mfcc(audio, sr)
         melspec = self.calculate_spectrogram(audio, sr)
+        # prosody, mfcc, melspec [frames, 108]
+        crop_length = min(prosody.shape[0], mfcc.shape[0], melspec.shape[0])
 
-        print(audio.shape, prosody.shape, mfcc.shape, melspec.shape)
+        # Extracting pretrained WavLM features
+        audio, _ = librosa.load(audio_path, sr=16000)               # loading audio at 16KHz per WavLM
+        audio = torch.from_numpy(audio).to(torch.float32)
+        wavlm_f = self.extract_wavlm_features(audio)
+        wavlm_f = F.interpolate(wavlm_f.unsqueeze(0).transpose(1, 2), size=crop_length, align_corners=True,
+                                mode='linear').transpose(1, 2).squeeze(0).cpu().numpy()         # [frames, 1024]
 
-        audio_features = np.concatenate((prosody, mfcc[-prosody.shape[0]:, ...], melspec[-prosody.shape[0]:, ...]), axis=1)
+        del audio
+        del sr
+
+        # Returning a compact audio features array
+        audio_features = np.concatenate((prosody[:crop_length], mfcc[:crop_length], melspec[:crop_length],
+                                        wavlm_f[:crop_length]), axis=1)
 
         return audio_features
 
-    def load_audio(self, audio_path):
-        audio, sr = librosa.load(audio_path, sr=None)
-        return audio, sr
+    def load_wavlm(self, path_to_checkpoint='None'):
+
+        assert os.path.isfile(path_to_checkpoint), f"Provided WavLM ckpt is not a file"
+        # returns model and config file
+        checkpoint = torch.load(path_to_checkpoint, map_location=torch.device('cpu'))  # load pre-trained model
+        cfg = WavLMConfig(checkpoint['cfg'])
+        model = WavLM(cfg)
+        model = model.to(self.device)
+        model.load_state_dict(checkpoint['model'])
+        model.eval()
+        print("WavLM: Model correctly loaded")
+        return model, cfg
+
+    def extract_wavlm_features(self, audio):
+
+        with torch.no_grad():
+            wav_input_16khz = audio.to(self.device)
+            if self.cfg.normalize:
+                wav_input_16khz = torch.nn.functional.layer_norm(wav_input_16khz, wav_input_16khz.shape)
+            wav_len = wav_input_16khz.shape[0]
+            chunk_len = 16000 * 5
+            num_chunks = wav_len // chunk_len + 1
+            wav_input_16khz = torch.nn.functional.pad(wav_input_16khz, (0, chunk_len * num_chunks - wav_len))
+            wav_input_16khz = wav_input_16khz.reshape(num_chunks, chunk_len)
+            rep = []
+            for i in range(0, num_chunks, 10):
+                rep.append(self.wavlm_model.extract_features(wav_input_16khz[i:i + 10])[0])
+            rep = torch.cat(rep, dim=0)
+            del wav_input_16khz
+            rep = rep.reshape(-1, rep.shape[-1]).detach().cpu()
+            return rep
 
     def extract_prosodic_features(self, audio_filename):
         """
@@ -217,18 +268,27 @@ def serial_shape_printer(**kwargs):
 
 if __name__ == "__main__":
 
-    # tested 11-12-23: working
+    # tested 11-12-23: working - Vanilla version
+    # TEST 16-05-2024: working - WavLM integrated version
+
+    from Config.FeaturesConfig import FeaturesConfig
+    from easydict import EasyDict
 
     key1 = True
     if key1:
-        fparam = features_config()
+        fparams = FeaturesConfig()
+        fparams = EasyDict(fparams)
+
+        device = 'cpu'
+        fparams.device = device
+
         """
         audio_processor = AudioProcessor(audio_main_dir=parameters.wav_main_dir,
                                          audio_interloctr_dir=parameters.wav_interloctr_dir,
                                          audio_parameters=parameters.audio_parameters)
         """
-        audio_processor = AudioProcessor(audio_parameters=fparam.audio_parameters)
-        audio_path = r"C:\Users\faval\genea2023_dataset\trn\main-agent\wav\trn_2023_v0_001_main-agent.wav"
+        audio_processor = AudioProcessor(fparams=fparams)
+        audio_path = r"C:\Users\faval\genea2023_dataset\trn\main-agent\wav\trn_2023_v0_000_main-agent.wav"
         audio_features = audio_processor(audio_path)
 
         serial_shape_printer(audio_features=audio_features)

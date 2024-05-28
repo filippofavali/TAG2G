@@ -2,11 +2,9 @@ import functools
 import os
 import pdb
 import numpy as np
-
 import blobfile as bf
 import torch
 from torch.optim import AdamW
-
 from FeaturesDiffuseStyle.diffusion import logger
 from FeaturesDiffuseStyle.diffusion.fp16_util import MixedPrecisionTrainer
 from FeaturesDiffuseStyle.diffusion.resample import LossAwareSampler, UniformSampler
@@ -78,6 +76,8 @@ class TrainLoop:
         self.mask_local_train = torch.ones(self.batch_size, args.n_poses).bool().to(self.device)
         self.mask_local_test = torch.ones(1, args.n_poses).bool().to(self.device)
 
+        self.cond_labels = args.agent_labels
+
     # def _load_and_sync_parameters(self):
     #     resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
     #
@@ -102,6 +102,7 @@ class TrainLoop:
     #         )
     #         self.opt.load_state_dict(state_dict)
 
+
     def run_loop(self):
 
         print("Starting training loop ...")
@@ -111,27 +112,58 @@ class TrainLoop:
                 if not (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps):
                     break
 
-                # Favali - right now implemented only with single speaker
-                # TODO: introduce a new kind of cond_ dict with double persons
+                # building cond_ dict
+                text_audio, gesture, gesture_gt, style = batch  # [b, 8, 18, 302+108/1434], [b, 8, 768], [b, 8*18=144, 74]
+                cond_ = {}
 
-                cond_ = {'y':{}}
+                for person in self.speakers:
 
+                    if (not 'dyadic' in self.args.version) and (person != 'main-agent'):
+                        # if not in dyadic and this person is not the speaker: break the cycle of building
+                        # then output will be cond_ = {'y': {...}}}
+                        break
+
+                    # load person data from batch
+                    motion = gesture[person].permute(0, 2, 1).unsqueeze(2).to(self.device, non_blocking=True)
+                    wavlm = text_audio[person]
+                    id = style[person]
+
+                    # DONE: Change name to style otherwise subscripting at every person --> interlocutor does not receives style correctly
+                    # pack person data into cond_
+                    label = self.cond_labels[person]
+                    cond_[label] = {}
+                    if person == 'main-agent':
+                        # in main agent let't take first code that will be actually implemented
+                        cond_[label]['seed'] = motion[..., 0:self.n_seed]
+                    elif person == 'interloctr':
+                        # for interloctr let's take last code gesture so far
+                        cond_[label]['seed'] = motion[..., -self.n_seed:]
+                    cond_[label]['gesture'] = motion
+                    cond_[label]['style'] = id.to(self.device, non_blocking=True)
+                    cond_[label]['mask_local'] = self.mask_local_train
+                    cond_[label]['audio'] = wavlm.to(torch.float32)[:, self.n_seed:].to(self.device, non_blocking=True)       # attention4
+                    cond_[label]['mask'] = self.mask_train  # [..., self.n_seed:]
+                    cond_[label]['mask_gt'] = self.mask_train_gt  # same as up but adapted to work with GT gestures
+                    if person == 'main-agent':
+                        motion_gt = gesture_gt[person].permute(0, 2, 1).unsqueeze(2).to(self.device, non_blocking=True)
+                        cond_[label]['motion_gt'] = motion_gt  # train diffusion with GT motion (and not features)
+
+                """
+                # previous monadic main-agent implementation
                 text_audio, gesture, gesture_gt, style = batch
-                motion = gesture["main-agent"].permute(0, 2, 1).unsqueeze(2).to(self.device, non_blocking=True)
-                wavlm = text_audio["main-agent"]
-                style = style["main-agent"]
-                motion_gt = gesture_gt["main-agent"].permute(0, 2, 1).unsqueeze(2).to(self.device, non_blocking=True)
-
+                cond_ = {'y':{}}     
+                # main agent cond_
                 cond_['y']['seed'] = motion[..., 0:self.n_seed]
                 # cond_['y']['seed_last'] = motion[..., -self.n_seed:]        # attention5
                 cond_['y']['style'] = style.to(self.device, non_blocking=True)
                 cond_['y']['mask_local'] = self.mask_local_train
                 # cond_['y']['audio'] = wavlm.to(torch.float32).to(self.device, non_blocking=True)      # attention3
-                cond_['y']['audio'] = wavlm.to(torch.float32)[:, self.n_seed:].to(self.device, non_blocking=True)       # attention4
+                cond_['y']['audio'] = 
                 # cond_['y']['audio'] = wavlm.to(torch.float32)[:, self.n_seed:-self.n_seed].to(self.device, non_blocking=True)  # attention5
                 cond_['y']['mask'] = self.mask_train              # [..., self.n_seed:]
                 cond_['y']['mask_gt'] = self.mask_train_gt        # same as up but adapted to work with
                 cond_['y']['motion_gt'] = motion_gt               # train diffusion with GT motion (and not features)
+                """
 
                 self.run_step(batch=motion, cond=cond_)
                 if self.step % self.log_interval == 0:
@@ -205,10 +237,8 @@ class TrainLoop:
         logger.logkv("step", self.step + self.resume_step)
         logger.logkv("samples", (self.step + self.resume_step + 1) * self.global_batch)
 
-
     def ckpt_file_name(self):
         return f"model{(self.step+self.resume_step):09d}.pt"
-
 
     def save(self):
         def save_checkpoint(params):

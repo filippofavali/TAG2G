@@ -312,7 +312,7 @@ class GaussianDiffusion:
 
         B, C = x.shape[:2]
         assert t.shape == (B,)
-        model_output = model(x, self._scale_timesteps(t), **model_kwargs)
+        model_output = model(x, self._scale_timesteps(t), model_kwargs)
 
         if 'inpainting_mask' in model_kwargs['y'].keys() and 'inpainted_motion' in model_kwargs['y'].keys():
             inpainting_mask, inpainted_motion = model_kwargs['y']['inpainting_mask'], model_kwargs['y']['inpainted_motion']
@@ -1282,7 +1282,11 @@ class GaussianDiffusion:
                 terms["loss"] *= self.num_timesteps
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
             # retrieve output from model
-            model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
+            # EDITED FAVALI :model(x_t, self._scale_timesteps(t), **model_kwargs) --> model_kwargs
+            # DONE: In respace.py _WrapperModel added model_kwargs as input in __call__
+            model_output = model(x=x_t,
+                                 ts=self._scale_timesteps(t),
+                                 model_kwargs=model_kwargs)
 
             if self.model_var_type in [     # ModelVarType.FIXED_SMALL: 2
                 ModelVarType.LEARNED,
@@ -1306,7 +1310,7 @@ class GaussianDiffusion:
                     # Without a factor of 1/1000, the VB term hurts the MSE term.
                     terms["vb"] *= self.num_timesteps / 1000.0
 
-            #TODO adaptations to TAG2G full pipeline
+            # DONE adaptations to TAG2G full pipeline
             if self.use_vqvae_decoder:
             # see if any model_output arrangement is needed
                 model_output = model_output.squeeze(2)[:, :256, :].permute(0, 2, 1).to(float)

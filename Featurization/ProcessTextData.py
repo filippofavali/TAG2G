@@ -16,14 +16,13 @@ import io
 import string
 from tqdm import tqdm
 import numpy as np
-from Config.FeaturesConfig import features_config
 
 
 class TextProcessor:
 
-    def __init__(self, word2vec_dir:str):
+    def __init__(self, fparams):
 
-        self.word2vector = self.load_word2vec(word2vec_dir)
+        self.word2vector = self.load_word2vec(fparams.word2vec_dir)
 
     def __call__(self, text_path, crop_length):
 
@@ -94,9 +93,11 @@ if __name__ == "__main__":
 
     # tested 11-12-23 working
 
+    from Config.FeaturesConfig import FeaturesConfig
+
     key1 = True
     if key1:
-        parameters = features_config()
+        parameters = FeaturesConfig()
         test_processor = TextProcessor(parameters.word2vec_dir)
         random_crop = 180
         assert type(random_crop) == int, "Not an INT"

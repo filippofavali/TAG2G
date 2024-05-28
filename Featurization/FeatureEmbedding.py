@@ -8,13 +8,20 @@ main_dir = os.path.abspath(os.path.join(script_dir, '..'))
 from Featurization.ProcessAudioData import AudioProcessor
 from Featurization.ProcessTextData import TextProcessor
 from Featurization.ProcessMotionData import GestureProcessor
-from Featurization.Config.FeaturesConfig import features_config
-
+from Featurization.Config.FeaturesConfig import FeaturesConfig
 import numpy as np
 import torch
-
 from argparse import ArgumentParser
+from easydict import EasyDict
+from tqdm import tqdm
 import glob
+
+
+def define_device(force_cpu=False):
+
+    dev = 'cuda' if torch.cuda.is_available() and not force_cpu else 'cpu'
+    print(f"Running on '{dev}'")
+    return dev
 
 
 def load_metadata(metadata, speakers):
@@ -69,164 +76,71 @@ def load_metadata(metadata, speakers):
     return metadict_byfname, metadict_byindex                   # num_speaker not returned
 
 
-def TAG_test_featuring(fparams, device, debug):
+def TAG_featuring(fparams):
 
     speaker_dict = {
         "main-agent": 0,
         "interloctr": 1,
     }
 
+    assert os.path.isdir(fparams.data_root), f"Source data directory does not exist"
+
+    # retrieving featurization parameters and checking valid conditions
     speakers = fparams.speakers
-    dataset_root = fparams.dataset_root
-    win_len = fparams.vqvae_params["motion_window_length"]
-
-    """
-    dataset_type = "not_defined"
-    for type in ["trn", "val", "tst"]:
-        if type in dataset_root:
-            dataset_type = type
-            break
-    """
-
+    assert speakers == ["main-agent", "interloctr"], "Only main-agent and interloctr"
+    dataset_root = fparams.data_root
     dataset_type = next((type for type in ["trn", "val", "tst"] if type in dataset_root), "not_defined")
     print(f"Processing {dataset_type} dataset")
-
-    # define features dir and make it if it doesn't exist
-    assert speakers == ["main-agent", "interloctr"], "Only main-agent and interloctr"
-
-    features_root = os.path.join(fparams.features_root, f"{dataset_type}_features")
-    text_save_path = os.path.join(features_root, "text")
-    audio_save_path = os.path.join(features_root, "audio")
-    gesture_save_path = os.path.join(features_root, "gesture")
-
-
-    for path in [features_root, text_save_path, audio_save_path, gesture_save_path]:
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-    metadata_path = os.path.join(dataset_root, "metadata.csv")
-    metadict_byfname, metadict_byindex = load_metadata(metadata_path, speakers)
-    filenames = sorted(metadict_byfname.keys())
-
-    if debug:
-        all_filenames = [f"{dataset_type}_2023_v0_000", f"{dataset_type}_2023_v0_001", f"{dataset_type}_2023_v0_002"]
-    else:
-        all_filenames = filenames
-
-    # loading method processors to process and featurize data from dataset
-    text_processor = TextProcessor(word2vec_dir=fparams.word2vec_dir)
-    audio_processor = AudioProcessor(audio_parameters=fparams.audio_parameters)
-    gesture_processor = GestureProcessor(fparams=fparams, device=device)
-
-    for i, filename in enumerate(all_filenames):
-        print(f"Processing {i + 1}/{len(filenames)}: '{filename}'", end="\r")
-
-        if not preload:
-
-            # have to do both for "main-agent" and "interloctr"
-            for participant in speakers:
-
-                bvh_path = os.path.join(dataset_root, participant, "bvh", f"{filename}_{participant}.bvh")
-                wav_path = os.path.join(dataset_root, participant, "wav", f"{filename}_{participant}.wav")
-                tsv_path = os.path.join(dataset_root, participant, "tsv", f"{filename}_{participant}.tsv")
-
-                # process gesture
-                if dataset_type == "trn" or dataset_type == "val":
-
-                    if os.path.isfile(os.path.join(gesture_save_path, f"{filename}_{participant}.npy")):
-                        print(f"'{filename}' gesture already exist")
-                        gesture_features_npy = np.load(os.path.join(gesture_save_path, f"{filename}_{participant}.npy"))
-                        print(f"Loaded gesture: {gesture_features_npy.shape}")
-                    else:
-                        dump_pipeline = (filename == 'trn_2023_v0_002')
-                        gesture_features_npy, gesture_npy, _ = gesture_processor(bvh_path, dump_pipeline=dump_pipeline)
-                        np.save(os.path.join(gesture_save_path, f"{filename}_{participant}.npy"), gesture_features_npy)
-
-                # process audio
-                if os.path.exists(os.path.join(audio_save_path, f"{filename}_{participant}.npy")):
-                    print(f"'{filename}' audio already exist")
-                    # load audio as needed for text clip length
-                    audio_features_npy = np.load(os.path.join(audio_save_path, f"{filename}_{participant}.npy"))
-                    print(f"Loaded audio: {audio_features_npy.shape}")
-                else:
-                    audio_features_npy = audio_processor(wav_path)
-                    np.save(os.path.join(audio_save_path, f"{filename}_{participant}.npy"), audio_features_npy)
-
-                # process text
-                if os.path.exists(os.path.join(text_save_path, f"{filename}_{participant}.npy")):
-                    print(f"{filename} text already exist")
-                    text_features_npy = np.load(os.path.join(text_save_path, f"{filename}_{participant}.npy"))
-                    print(f"Loaded audio: {text_features_npy.shape}")
-                else:
-                    clip_len = min(audio_features_npy.shape[0], gesture_npy.shape[0])
-                    print(f"Clipping text length at {clip_len}")
-                    text_features_npy = text_processor(tsv_path, crop_length=clip_len)
-                    np.save(os.path.join(text_save_path, f"{filename}_{participant}.npy"), text_features_npy)
-
-
-def TAG_featuring(fparams, device, preload, debug):
-
-    speaker_dict = {
-        "main-agent": 0,
-        "interloctr": 1,
-    }
-
-    speakers = fparams.speakers
-    dataset_root = fparams.dataset_root
+    assert dataset_type != "not_defined", f"Provided a non valid dataset_root: trn, val, tst"
     win_len = fparams.vqvae_params["motion_window_length"]
 
-    """
-    dataset_type = "not_defined"
-    for type in ["trn", "val", "tst"]:
-        if type in dataset_root:
-            dataset_type = type
-            break
-    """
 
-    dataset_type = next((type for type in ["trn", "val", "tst"] if type in dataset_root), "not_defined")
-    print(f"Processing {dataset_type} dataset")
+    # TODO: Relative reference in this path need to be related to os.getcwd()
+    # TODO: Do I really need this? is it preload that usefull?
+    # TODO: If one of the paths is not a dir --> then preload = false because we have to
 
-    # define features dir and make it if it doesn't exist
-    # assert ("trn" or "val" or "tst") in dataset_root, "Only trn, val, tst root permitted"
-    assert speakers == ["main-agent", "interloctr"], "Only main-agent and interloctr"
+    # Define output directories to store files
+    cwd = os.getcwd()
+    features_root = os.path.join(cwd, fparams.features_root, f"{dataset_type}_features_{fparams.description}")
+    if not os.path.isdir(features_root):
+        os.makedirs(features_root)
 
-    features_root = os.path.join(fparams.features_root, f"{dataset_type}_features")
-    text_save_path = os.path.join(features_root, "text")
-    audio_save_path = os.path.join(features_root, "audio")
+    text_save_path = os.path.join(cwd, features_root, "text")
+    audio_save_path = os.path.join(cwd, features_root, "audio")
     gesture_save_path = os.path.join(features_root, "gesture")
     motion_save_path = os.path.join(features_root, "gestureGT")
 
-    for path in [features_root, text_save_path, audio_save_path, gesture_save_path, motion_save_path]:
-        if not os.path.exists(path):
-            os.makedirs(path)
+    if fparams.store_npy:
+        for path in [features_root, text_save_path, audio_save_path, gesture_save_path, motion_save_path]:
+            if not os.path.exists(path):
+                # make the dir but also set preload to false - if dir does not exist no file to load ^_^
+                os.makedirs(path)
+                fparams.preload = False
 
     metadata_path = os.path.join(dataset_root, "metadata.csv")
     metadict_byfname, metadict_byindex = load_metadata(metadata_path, speakers)
     filenames = sorted(metadict_byfname.keys())
 
-    if debug:
+    if fparams.debug:
         all_filenames = ["trn_2023_v0_000", "trn_2023_v0_001", "trn_2023_v0_002"]
     else:
         all_filenames = filenames
 
-    # loading method processors to process and featurize data from dataset
-    if not preload:
-        text_processor = TextProcessor(word2vec_dir=fparams.word2vec_dir)
-        audio_processor = AudioProcessor(audio_parameters=fparams.audio_parameters)
-        gesture_processor = GestureProcessor(fparams=fparams, device=device)
+    if not fparams.preload:
+        # Multimodal processing instantiation
+        text_processor = TextProcessor(fparams=fparams)
+        audio_processor = AudioProcessor(fparams=fparams)
+        gesture_processor = GestureProcessor(fparams=fparams)
 
-    h5_dump_pointer = os.path.join(features_root, f"TWH-{dataset_type}_v0_.h5")
+    h5_dump_pointer = os.path.join(features_root, f"TWH-{dataset_type}_{fparams.description}.h5")
     with h5py.File(h5_dump_pointer, "w") as h5:
 
-        for i, filename in enumerate(all_filenames):
-            print(f"Processing {i+1}/{len(filenames)}: '{filename}'", end="\r")
+        progress_bar = tqdm(all_filenames, desc="Extracting features")
+        for i, filename in enumerate(progress_bar):
+
+            progress_bar.set_description(f"Processing {i+1}/{len(all_filenames)}: '{filename}'")
             g_data = h5.create_group(str(i))
             has_finger, speaker_id = metadict_byfname[filename]
-
-            """
-            if preload --> h5_build over the text, audio, gesture npy features
-            if not preload --> from tsv, wav, bvh to text, audio, gesture features
-            """
 
             # For every file a tuple with both main-agent and interloctr data in it --> used in h5 group.create_dataset
             gesture_features = []
@@ -234,8 +148,12 @@ def TAG_featuring(fparams, device, preload, debug):
             audio_features = []
             text_features = []
 
-            if not preload:
+            """
+            if preload --> h5_build over the text, audio, gesture npy features
+            if not preload --> from tsv, wav, bvh to text, audio, gesture features
+            """
 
+            if not fparams.preload:
                 # have to do both for "main-agent" and "interloctr"
                 for participant in speakers:
 
@@ -244,62 +162,63 @@ def TAG_featuring(fparams, device, preload, debug):
                     tsv_path = os.path.join(dataset_root, participant, "tsv", f"{filename}_{participant}.tsv")
 
                     # process gesture
+                    # TODO:  Throws error with interloctr - tst dataset (no main-agent tst)
                     if dataset_type == "trn" or dataset_type == "val":
-                        if not os.path.isfile(os.path.join(gesture_save_path,f"{participant}_{filename}.npy")):
-                            dump_pipeline = (filename == 'trn_2023_v0_002')
-                            gesture_features_npy, gesture_npy, _ = gesture_processor(bvh_path, dump_pipeline=dump_pipeline)
-                            np.save(os.path.join(gesture_save_path, f"{participant}_{filename}.npy"), gesture_features_npy)
-                            np.save(os.path.join(motion_save_path, f"{participant}_{filename}.npy"), gesture_npy)
-                        else:
+                        # DONE: if features already exist and preload = True
+                        if os.path.isfile(os.path.join(gesture_save_path,f"{filename}_{participant}.npy")) and fparams.preload:
+                            print(
+                                f"Gesture features '{filename}_{participant}' already exist - Preload:{fparams.preload}")
                             gesture_features_npy = np.load(os.path.join(gesture_save_path, f"{participant}_{filename}.npy"))
                             gesture_npy = np.load(os.path.join(motion_save_path, f"{participant}_{filename}.npy"))
+                        else:
+                            dump_pipeline = (filename == 'trn_2023_v0_002')
+                            gesture_features_npy, gesture_npy, _ = gesture_processor(bvh_path, dump_pipeline=dump_pipeline)
+                            if fparams.store_npy:
+                                np.save(os.path.join(gesture_save_path, f"{filename}_{participant}.npy"), gesture_features_npy)
+                                np.save(os.path.join(motion_save_path, f"{filename}_{participant}.npy"), gesture_npy)
 
                         gesture_features.append(gesture_features_npy)
                         gesture.append(gesture_npy)
 
                     # process audio
-                    if os.path.exists(os.path.join(audio_save_path, f"{participant}_{filename}.npy")):
-                        print(f"'{filename}' audio already exist")
+                    if os.path.exists(os.path.join(audio_save_path, f"{filename}_{participant}.npy")) and fparams.preload:
+                        print(f"Audio features '{filename}_{participant}' already exist - Preload:{fparams.preload}")
                         audio_features_npy = np.load(os.path.join(audio_save_path, f"{participant}_{filename}.npy"))
                     else:
                         audio_features_npy = audio_processor(wav_path)
-                        if dataset_type == "trn" or dataset_type == "val":
+                        if fparams.store_npy:
                             np.save(os.path.join(audio_save_path, f"{participant}_{filename}.npy"), audio_features_npy)
-                        else:
-                            np.save(os.path.join(audio_save_path,
-                                                 f"{participant}_{filename}_{speaker_id[speaker_dict[participant]]}.npy"),
-                                    audio_features_npy)
-
                     audio_features.append(audio_features_npy)
 
                     # process text
-                    if os.path.exists(os.path.join(text_save_path, f"{participant}_{filename}.npy")):
-                        print(f"{filename} text already exist")
-                        text_features_npy = np.load(os.path.join(text_save_path, f"{participant}_{filename}.npy"))
+                    if os.path.exists(os.path.join(text_save_path, f"{filename}_{participant}.npy")) and fparams.preload:
+                        print(f"Text fetures '{filename}_{participant}' already exist - Preload:{fparams.preload}")
+                        text_features_npy = np.load(os.path.join(text_save_path, f"{filename}_{participant}.npy"))
                     else:
                         clip_len = min(audio_features_npy.shape[0], gesture_npy.shape[0])
                         print(f"Clipping text length at {clip_len}")
                         text_features_npy = text_processor(tsv_path, crop_length=clip_len)
-                        np.save(os.path.join(text_save_path, f"{participant}_{filename}.npy"), text_features_npy)
-
+                        if fparams.store_npy:
+                            np.save(os.path.join(text_save_path, f"{filename}_{participant}.npy"), text_features_npy)
                     text_features.append(text_features_npy)
 
-            else:
+            elif fparams.preload:
 
                 for participant in speakers:
 
                     if dataset_type == "trn" or dataset_type == "val":
                         # process gesture only in train or validation (inference time in tst doesn't require gesture)
-                        gesture_features_npy = np.load(os.path.join(gesture_save_path, f"{participant}_{filename}.npy"))
-                        gesture_npy = np.load(os.path.join(motion_save_path, f"{participant}_{filename}.npy"))
+                        gesture_features_npy = np.load(os.path.join(gesture_save_path, f"{filename}_{participant}.npy"))
+                        gesture_npy = np.load(os.path.join(motion_save_path, f"{filename}_{participant}.npy"))
                         gesture_features.append(gesture_features_npy)
                         gesture.append(gesture_npy)
 
-                    audio_features_npy = np.load(os.path.join(audio_save_path, f"{participant}_{filename}.npy"))
+                    audio_features_npy = np.load(os.path.join(audio_save_path, f"{filename}_{participant}.npy"))
                     audio_features.append(audio_features_npy)
-                    text_features_npy = np.load(os.path.join(text_save_path, f"{participant}_{filename}.npy"))
+                    text_features_npy = np.load(os.path.join(text_save_path, f"{filename}_{participant}.npy"))
                     text_features.append(text_features_npy)
 
+            # TODO: Need to see how to do if someone wants to run the tst dataset -- online pipeline ??
             # then build the h5 file to run diffusion model on, only for trn and val data
             if dataset_type == "trn" or dataset_type == "val":
 
@@ -348,35 +267,31 @@ def TAG_featuring(fparams, device, preload, debug):
 
 if __name__ == "__main__":
 
-    """
+    from pprint import pprint
+
+    # DONE: Clean current ***t implementation
+    # DONE: Add WavLM when encoding audio
+    # DONE: Argument parser - add also 'force_cpu' and mix with fparams
+    # TODO: decide about generation of tst dataset - does it has to happen online (so discard usage with tst)
+
     parser = ArgumentParser()
-    parser.add_argument("--train_root", type=str, help="train root with text, audio, gesture dir")
-    parser.add_argument("--vqvae_dir", type=str)
-    parser.add_argument("--crawl_dir", type=str)
+    parser.add_argument("--data_source", type=str, help="train root with text, audio, gesture dir")
+    parser.add_argument("--force_cpu", action='store_true')
     parser.add_argument("--preload", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument('--store_npy', action='store_true')
     args = parser.parse_args()
-    
-    train_root = args.train_root
-    vqvae_dir = args.vqvae_dir
-    word2vec_dir = args.crawl_dir
-    """
+    fparams = FeaturesConfig()                     # parameters to be used in features embedding
 
-    # settings to run the code from pycharm -->
-    preload = False
-    debug = False
-    test_data = False
+    # Update featurization parameters with arg parser inputs
+    fparams['device'] = define_device(force_cpu=args.force_cpu)
+    for key, value in vars(args).items():
+        fparams[key] = value
 
-    ## then cancel until here <--
+    print("Printing featurization parameters ...")
+    pprint(fparams)
 
-    fparams = features_config()                                     # parameters to be used in features embedding
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Running on {device}")
+    fparams = EasyDict(fparams)
 
-    if test_data:
-        TAG_test_featuring(fparams, device, debug=debug)
-    else:
-        TAG_featuring(fparams, device, preload=preload, debug=debug)
-
-    # then I need something that start to window with window length of 30 frames or so
-    # probably motion has to master the embedding and then the other two coming
+    # DONE: test functionality of the above procedure -Working 17/05/24
+    TAG_featuring(fparams)

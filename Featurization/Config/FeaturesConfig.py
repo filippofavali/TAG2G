@@ -4,38 +4,34 @@
 """
 
 
-class features_config(object):
+class FeaturesConfig(dict):
 
     def __init__(self, **kwargs):
+        # Initialize the base dictionary
+        super().__init__()
 
-        # INSERT HERE PREVIOUS KNOW CONSTANT PARAMETERS TO THE NET
-        self.__dict__ = self.features_config(**kwargs)
-
-    def __call__(self):
-        return self.__dict__
-
-    def features_config(self, **kwargs):
-
-        parameters_dict = {
-
+        # Define the default parameters
+        self.default_parameters = {
             # general parameters
-            "dataset_root": r"C:\Users\faval\genea2023_dataset\val",
-            "features_root": r"C:\Users\faval\PycharmProjects\TAG2G\data",
+            "description": "with_wavlm",
+            "data_root": r"../../TWH_GENEA23/val",
+            "features_root": r"../data",
             "speakers": ["main-agent", "interloctr"],
 
             # text specs
-            "word2vec_dir": r"C:\Users\faval\PycharmProjects\TAG2G\crawl-300d-2M.vec",          # repo word2vec dir
+            "word2vec_dir": r"../crawl-300d-2M.vec",
 
             # Audio specs
             "audio_parameters": {
                 "NFFT": 4096,
-                "MFCC_INPUTS": 40,                              # how many parameters will store for each MFCC vector
-                "HOP_LENGTH": 1/30,
+                "MFCC_INPUTS": 40,  # how many parameters will store for each MFCC vector
+                "HOP_LENGTH": 1 / 30,
                 "DIM": 64,
+                "WavLM": r'../WavLM/WavLM-Large.pt'
             },
 
             # Gesture specs (from VQVAE trained model)
-            "vqvae_checkpoint": r"C:\Users\faval\PycharmProjects\TAG2G\VQVAE\results\vqvae",
+            "vqvae_checkpoint": r"../VQVAE/results/vqvae_cinematic",
             "vqvae_params": {
                 "num_emb": 2048,
                 "emb_dim": 256,
@@ -43,12 +39,31 @@ class features_config(object):
                 "hidden_dim": 1024,
                 "motion_window_length": 18
             },
-            "dump_pipeline_dir" : r"C:\Users\faval\PycharmProjects\TAG2G\Utils",
+            "dump_pipeline_dir": r"../Utils",
         }
 
-        # updating parameters from call method
-        for parameter, value in kwargs.items():
-            if parameter in parameters_dict:
-                parameters_dict[parameter] = value
+        # Update the default parameters with any provided in kwargs
+        self.default_parameters.update(kwargs)
 
-        return parameters_dict
+        # Set the dictionary with the updated parameters
+        self.update(self.default_parameters)
+
+    def __call__(self):
+        return self
+
+
+if __name__ == '__main__':
+
+    # Testing usage and operator access with EasyDict - working 17-05-24
+
+    from pprint import pprint
+    from easydict import EasyDict
+    # Usage test
+    config = FeaturesConfig(dataset_root=r"new\path\to\dataset")
+    config = EasyDict(config)
+    # pprint(config())
+
+    print(config.audio_parameters)
+
+
+
