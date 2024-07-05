@@ -13,8 +13,8 @@ class FeaturesConfig(dict):
         # Define the default parameters
         self.default_parameters = {
             # general parameters
-            "description": "with_wavlm",
-            "data_root": r"../../TWH_GENEA23/val",
+            "description": "",
+            "data_root": r"../../../genea2023_dataset/val",
             "features_root": r"../data",
             "speakers": ["main-agent", "interloctr"],
 

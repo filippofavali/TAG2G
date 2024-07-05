@@ -63,6 +63,10 @@ also to produce both val and trn dataset features at call and not cahnging param
     
     python end2end.py
 
+Or, you can resume past training from ../TAG2G/FeaturesDiffuseStyle/results/...
+
+    python end2end.py --resume_checkpoint ../results/modelyouwant/modelxxxxxxxxx.pt
+
 
 # Diffusion model inference (generation of new samples)
 
@@ -75,15 +79,19 @@ also to produce both val and trn dataset features at call and not cahnging param
     cd ..local_path/TAG2G/Featurization
     python FeatureEmbedding.py --store_npy
 
-    - alwaiys check to have a config.yml file related to the training in the your model_path to load parameters from 
+    - always check to have a config.yml file related to the training in the your model_path to load parameters from 
 
     cd ../FeaturesDiffuseStyle/mydiffusion_beat_twh
     python sample.py --tst_path=data/val_features --save_dir --model_path 'TWH_mymodel4_512_cinematic/model005379000.pt' --max_length 0 --tst_prefix 'val_2023_v0_023'
+
+    if you want to run with interlocutor gesture clusters you have to add
+
+    --use_inter_clusters when calling sample.py
     
     Ways of use: 
     1. only tst_path --> data is alredy been featurized (text and audio) as .npy files, load everything from that dir
     2. tst_path & tst_prefix --> load only that sample's features from tst_path directory
     3. if only tst_prefix --> (NOT IMPLEMENTED) script to be built to avoid any kind of previous featurization of the script
 
-Change accordingly both tst_path, model_path, and sample name; be sure to have val dataset featurized using Featurization over both
+Change accordingly both tst_path, model_path, and tst_prefix; be sure to have val dataset featurized using Featurization over both
 trn and val dataset (change in the FeaturesConfig.py the parameter dataset_root to val one in your dataset folder)

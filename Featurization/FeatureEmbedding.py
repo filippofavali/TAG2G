@@ -94,14 +94,12 @@ def TAG_featuring(fparams):
     assert dataset_type != "not_defined", f"Provided a non valid dataset_root: trn, val, tst"
     win_len = fparams.vqvae_params["motion_window_length"]
 
-
-    # TODO: Relative reference in this path need to be related to os.getcwd()
-    # TODO: Do I really need this? is it preload that usefull?
-    # TODO: If one of the paths is not a dir --> then preload = false because we have to
-
     # Define output directories to store files
     cwd = os.getcwd()
-    features_root = os.path.join(cwd, fparams.features_root, f"{dataset_type}_features_{fparams.description}")
+    if fparams.description == '':
+        features_root = os.path.join(cwd, fparams.features_root, f"{dataset_type}_features")
+    else:
+        features_root = os.path.join(cwd, fparams.features_root, f"{dataset_type}_features{fparams.description}")
     if not os.path.isdir(features_root):
         os.makedirs(features_root)
 
@@ -183,11 +181,11 @@ def TAG_featuring(fparams):
                     # process audio
                     if os.path.exists(os.path.join(audio_save_path, f"{filename}_{participant}.npy")) and fparams.preload:
                         print(f"Audio features '{filename}_{participant}' already exist - Preload:{fparams.preload}")
-                        audio_features_npy = np.load(os.path.join(audio_save_path, f"{participant}_{filename}.npy"))
+                        audio_features_npy = np.load(os.path.join(audio_save_path, f"{filename}_{participant}.npy"))
                     else:
                         audio_features_npy = audio_processor(wav_path)
                         if fparams.store_npy:
-                            np.save(os.path.join(audio_save_path, f"{participant}_{filename}.npy"), audio_features_npy)
+                            np.save(os.path.join(audio_save_path, f"{filename}_{participant}.npy"), audio_features_npy)
                     audio_features.append(audio_features_npy)
 
                     # process text
@@ -280,6 +278,7 @@ if __name__ == "__main__":
     parser.add_argument("--preload", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument('--store_npy', action='store_true')
+    parser.add_argument("--use_wavlm", action='store_false', default=True)
     args = parser.parse_args()
     fparams = FeaturesConfig()                     # parameters to be used in features embedding
 

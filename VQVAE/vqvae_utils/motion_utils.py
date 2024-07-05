@@ -77,6 +77,22 @@ def create_TAG2G_pipeline() -> Pipeline:
     ])
     return pipeline
 
+
+def create_TAG2G_filtering_pipeline() -> Pipeline:
+    """
+    Creates a pipeline for processing motion capture data.
+
+    Returns:
+        Pipeline: The data processing pipeline.
+    """
+    pipeline = Pipeline([
+        ('exp', TAG2G_MocapParameterizer(param_type='TAG2G_expmap', bworld_translation_scaler=100)),
+        ('cnst', ConstantsRemover()),
+        ('jtsel', TAG2G_JointSelector(joints, include_body_world=True)),
+    ])
+    return pipeline
+
+
 def create_TWH_pipeline() -> Pipeline:
 
     # rotmat implementation
@@ -103,7 +119,18 @@ def process_pipeline(parsed_data: MocapData, pipeline: Pipeline) -> np.ndarray:
     return processed_samples[0]
 
 
-def inverse_process_pipeline(gesture_data: np.ndarray, pipeline: Pipeline) -> MocapData:
+def extract_gesture_from_bhv(parsed_data:MocapData, pipeline:Pipeline) -> np.ndarray:
+    """
+
+    :param parsed_data: a single Mocap data file
+    :param pipeline: a previously fitted pipeline that you loaded using something like jl.load(path/to/pipeline)
+    :return: np.ndarray of shape J,T where J is total number of joints and T is the time length of the signal
+    """
+    processed_samples = pipeline.transform([parsed_data])
+    return processed_samples[0]
+
+
+def inverse_process_pipeline(gesture_data:np.ndarray, pipeline:Pipeline) -> MocapData:
 
     mocap_data = pipeline.inverse_transform([gesture_data])
     return mocap_data[0]
@@ -179,12 +206,16 @@ def split_bvh_into_blocks(processed_data: np.ndarray, beats: np.ndarray) -> List
     return blocks
 
 
-def gesture_smoothing(sample):
+def gesture_smoothing(sample, smoothing=True):
 
     # gesture smoothing
-    gesture = np.zeros((sample.shape[0], sample.shape[1]))
-    for i in range(sample.shape[1]):
-        gesture[:, i] = savgol_filter(sample[:, i], 15, 2)
+    if smoothing:
+        # Applying Savgol polyorder two to gesture signal
+        gesture = np.zeros((sample.shape[0], sample.shape[1]))
+        for i in range(sample.shape[1]):
+            gesture[:, i] = savgol_filter(sample[:, i], 15, 2)
+    else:
+        gesture = sample            # remember to edit this !!
 
     return gesture
 

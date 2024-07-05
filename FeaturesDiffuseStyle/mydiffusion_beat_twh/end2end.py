@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from FeaturesDiffuseStyle.utils.model_util import create_gaussian_diffusion
+from FeaturesDiffuseStyle.utils.model_util import create_gaussian_diffusion, load_model_wo_clip
 from FeaturesDiffuseStyle.model.mdm import MDM
 from FeaturesDiffuseStyle.train.training_loop import TrainLoop
 from VQVAE.system import VQVAESystem
@@ -68,7 +68,7 @@ def main(args, mydevice):
                                        sequence_length=args.n_poses, npy_root="../process", 
                                        version=args.version, dataset=args.dataset)        # debug
     print("Dataset correctly loaded ...")
-    print(f"USING BATCHSIZE: {args.batch_size}")
+    print(f"Using batch size: {args.batch_size} - version: {args.version}")
     print(f"Dataset correctly loaded with {len(trn_dataset)} samples")
     train_loader = DataLoader(trn_dataset, num_workers=args.num_workers,
                               sampler=RandomSampler(0, len(trn_dataset)),
@@ -100,10 +100,13 @@ if __name__ == '__main__':
     mydevice = torch.device(device_name)
     print(f"Using '{mydevice}' as device")
     torch.cuda.set_device(int(args.gpu))
-    # torch.cuda.empty_cache()                                            # empty cache memory of cuda, dangerous to run this on the server
+    # torch.cuda.empty_cache()                     # empty cache memory of cuda, dangerous to run this on the server
     args.no_cuda = args.gpu
 
     # then look into config file settings
+    if args.resume_checkpoint is not None:
+        args.config = os.path.join(os.path.dirname(args.resume_checkpoint), 'hyperparameters.yml')
+    print(f"Loading config from '{args.config}'")
     with open(args.config) as f:
         config = yaml.safe_load(f)
     for k, v in vars(args).items():
@@ -129,7 +132,7 @@ if __name__ == '__main__':
         config.latent_dim = 512
         config.audio_feat_dim_latent = 128
         config.style_dim = 17
-        config.audio_feature_dim = 410
+        config.audio_feature_dim = 1434
     elif 'dyadic' in config.version:
         config.motion_dim = 256
         config.njoints = 768                                                # 256*3
@@ -146,11 +149,8 @@ if __name__ == '__main__':
     # set save directory
     config.save_dir = os.path.join(config.save_dir, f"TAG2Gmodel_{config.version}_{config.description}")
     if not os.path.exists(config.save_dir):
-        print("Saving directory already exist ...")
         os.makedirs(name=config.save_dir)
-    print('model save path: ', config.save_dir, '   version:', config.version)
     # define h5features pointer
-    config.h5file = os.path.join(project_path, config.h5file)
     assert os.path.isfile(config.h5file), f"Provided h5_pointer '{config.h5file}' is not a file"
     # define vqvae checkpoint
     config.vqvae_checkpoint = os.path.join(project_path, config.vqvae_checkpoint)
@@ -163,12 +163,10 @@ if __name__ == '__main__':
         config.speakers[1]:config.label2
     }
 
-    # store train hyperparameters into a textfile in the save dir
-    # DONE: Favali - check if the underneath procedure works
-    with open(os.path.join(config.save_dir, "hyperparameters.yml"), 'w') as file:
-        yaml.dump(dict(config), file)
-
-
-    print(f"Using batch_size: {args.batch_size}")
+    # store train hyperparameters into a textfile in the save dir, if is not resuming from previous train
+    # TODO: this is not working, the yml dumped file is corrupted
+    if args.resume_checkpoint is None:
+        with open(os.path.join(config.save_dir, "hyperparameters.yml"), 'w') as file:
+            yaml.dump(dict(config), file)
 
     main(config, mydevice)

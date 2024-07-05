@@ -24,9 +24,10 @@ def parse_args():
     parser.add_argument('--config', default='./configs/DiffuseStyleGesture.yml')
     parser.add_argument('--gpu', type=str, default='2')
     parser.add_argument('--no_cuda', type=list, default=['2'])
-    parser.add_argument('--batch_size', type=int)
+    parser.add_argument('--batch_size', type=int, default=360)
     parser.add_argument('--use_vqvae_decoder', action='store_true', default=False)
     parser.add_argument('--dyadic', action="store_true", default=False)
+    parser.add_argument('--resume_checkpoint', default=None)
     
     args = parser.parse_args()
     return args

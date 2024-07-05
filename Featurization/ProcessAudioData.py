@@ -43,9 +43,8 @@ class AudioProcessor:
         self.HOP_LENGTH = audio_parameters["HOP_LENGTH"]
         self.DIM = audio_parameters["DIM"]
         self.wavlm_model, self.cfg = self.load_wavlm(path_to_checkpoint=audio_parameters["WavLM"])
-
-        # DONE: integration of WavLM when encoding audio features
-
+        self.use_wavlm = fparams.use_wavlm
+        print(f"Use wavlm: {self.use_wavlm}")
 
     def __call__(self, audio_path):
 
@@ -59,20 +58,21 @@ class AudioProcessor:
         # prosody, mfcc, melspec [frames, 108]
         crop_length = min(prosody.shape[0], mfcc.shape[0], melspec.shape[0])
 
-        # Extracting pretrained WavLM features
-        audio, _ = librosa.load(audio_path, sr=16000)               # loading audio at 16KHz per WavLM
-        audio = torch.from_numpy(audio).to(torch.float32)
-        wavlm_f = self.extract_wavlm_features(audio)
-        wavlm_f = F.interpolate(wavlm_f.unsqueeze(0).transpose(1, 2), size=crop_length, align_corners=True,
-                                mode='linear').transpose(1, 2).squeeze(0).cpu().numpy()         # [frames, 1024]
+        if not self.use_wavlm:
+            audio_features = np.concatenate((prosody[:crop_length], mfcc[:crop_length], melspec[:crop_length]), axis=1)
+        else:
+            # Extracting pretrained WavLM features
+            audio, _ = librosa.load(audio_path, sr=16000)               # loading audio at 16KHz per WavLM
+            audio = torch.from_numpy(audio).to(torch.float32)
+            wavlm_f = self.extract_wavlm_features(audio)
+            wavlm_f = F.interpolate(wavlm_f.unsqueeze(0).transpose(1, 2), size=crop_length, align_corners=True,
+                                    mode='linear').transpose(1, 2).squeeze(0).cpu().numpy()         # [frames, 1024]
+            del audio
+            del sr
 
-        del audio
-        del sr
-
-        # Returning a compact audio features array
-        audio_features = np.concatenate((prosody[:crop_length], mfcc[:crop_length], melspec[:crop_length],
-                                        wavlm_f[:crop_length]), axis=1)
-
+            # Returning a compact audio features array
+            audio_features = np.concatenate((prosody[:crop_length], mfcc[:crop_length], melspec[:crop_length],
+                                            wavlm_f[:crop_length]), axis=1)
         return audio_features
 
     def load_wavlm(self, path_to_checkpoint='None'):
@@ -276,7 +276,7 @@ if __name__ == "__main__":
 
     key1 = True
     if key1:
-        fparams = FeaturesConfig()
+        fparams = FeaturesConfig(use_wavlm=False)
         fparams = EasyDict(fparams)
 
         device = 'cpu'

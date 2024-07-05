@@ -26,3 +26,4 @@ VQVAE/results/
 
 # Ignore tests
 Test/
+/FeaturesDiffuseStyle/model/old mdm/

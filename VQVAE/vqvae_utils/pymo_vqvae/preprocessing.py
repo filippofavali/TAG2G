@@ -34,7 +34,7 @@ class MocapParameterizer(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X, y=None):
-        print("MocapParameterizer: " + self.param_type)
+        # print("MocapParameterizer: " + self.param_type)       # debug line
         if self.param_type == 'euler':
             return X
         elif self.param_type == 'expmap':
@@ -345,7 +345,7 @@ class TAG2G_MocapParameterizer(BaseEstimator, TransformerMixin):
 
     def transform(self, X, y=None):
 
-        print("MocapParameterizer: " + self.param_type)
+        # print("MocapParameterizer: " + self.param_type)           # debug line
 
         if self.param_type == 'TAG2G_expmap':
             return self.TAG2G_to_expmap(X)
@@ -413,7 +413,7 @@ class TAG2G_MocapParameterizer(BaseEstimator, TransformerMixin):
             norm_rot = [joint for joint in track.values.columns if 'root' in joint and 'rotation' in joint]
 
             if euler_df[norm_rot[2]].abs().mean() > 150:        # this means the figure is 180degrees rotated
-                print(f"Into rotation normalization")
+                # print(f"Into rotation normalization")
                 euler_df[norm_rot[2]] = euler_df[norm_rot[2]] + 180
                 euler_df[norm_rot[0]] = - euler_df[norm_rot[0]]
                 euler_df[norm_rot[1]] = - euler_df[norm_rot[1]]
@@ -628,7 +628,7 @@ class JointSelector(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X, y=None):
-        print("JointSelector")
+        # ("JointSelector")
         Q = []
 
         # print(f"My debug --X_values.columns\nlen: {len(X[0].values.columns)}\n{X[0].values.columns}")
@@ -699,7 +699,7 @@ class TAG2G_JointSelector(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X, y=None):
-        print("TAG2G_JointSelector")
+        # print("TAG2G_JointSelector")
         Q = []
 
         # print(f"My debug --X_values.columns\nlen: {len(X[0].values.columns)}\n{X[0].values.columns}")
@@ -750,7 +750,7 @@ class Numpyfier(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X, y=None):
-        print("Numpyfier")
+        # print("Numpyfier")
         Q = []
         
         for track in X:
@@ -844,7 +844,7 @@ class RootTransformer(BaseEstimator, TransformerMixin):
         return self
     
     def transform(self, X, y=None):
-        print("RootTransformer")
+        # print("RootTransformer")
         Q = []
 
         for track in X:

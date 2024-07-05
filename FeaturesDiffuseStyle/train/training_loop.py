@@ -28,7 +28,7 @@ class TrainLoop:
         self.lr = args.lr
         self.log_interval = args.log_interval
         # self.save_interval = args.save_interval
-        # self.resume_checkpoint = args.resume_checkpoint
+        self.resume_checkpoint = args.resume_checkpoint
         self.use_fp16 = False  # deprecating this option
         self.fp16_scale_growth = 1e-3  # deprecating this option
         self.weight_decay = args.weight_decay
@@ -37,7 +37,7 @@ class TrainLoop:
 
         self.step = 0
         self.resume_step = 0
-        self.global_batch = self.batch_size     # * dist.get_world_size()
+        self.global_batch = self.batch_size                         # * dist.get_world_size()
         self.num_steps = args.max_num_steps
         self.save_iters = args.save_iters
         self.n_seed = args.n_seed
@@ -51,13 +51,31 @@ class TrainLoop:
             fp16_scale_growth=self.fp16_scale_growth,
         )
 
-        self.save_dir = args.save_dir
-
         self.device = device
         if args.audio_feat == "mfcc" or args.audio_feat == 'wavlm':
             self.opt = AdamW([
                 {'params': self.mp_trainer.master_params, 'lr':self.lr, 'weight_decay':self.weight_decay}
             ])
+
+        if self.resume_checkpoint is not None:
+            # Find resume step
+            self.resume_step = int(bf.basename(self.resume_checkpoint).split('.')[0].replace('model', ''))
+            assert type(self.resume_step) == int, f"Couldn't find resume step value from checkpoint"
+            logger.log(f"Model resumed at {self.resume_step} steps")
+
+            # Call resume methods
+            self._load_and_sync_parameters()
+            self._load_optimizer_state()
+            self.save_dir = os.path.dirname(self.resume_checkpoint)
+            logger.log(f"Train will be saved into '{self.save_dir}'")
+        else:
+            logger.log('Creating a new model')
+            self.save_dir = args.save_dir
+            if not bf.exists(self.save_dir):
+                bf.makedirs(self.save_dir)
+                logger.log(f"Save dir '{self.save_dir}' correctly created")
+            else:
+                logger.log(f"Save dir '{self.save_dir}' already exist - check to not override previous training")
 
         # if self.resume_step:
         #     self._load_optimizer_state()
@@ -69,7 +87,7 @@ class TrainLoop:
         self.eval_wrapper, self.eval_data, self.eval_gt_data = None, None, None
 
         self.use_ddp = False
-        self.ddp_model = self.model
+        self.ddp_model = self.model.to(device)
         self.mask_train = (torch.zeros([self.batch_size, 1, 1, args.n_poses]) < 1).to(self.device)
         self.mask_train_gt = (torch.zeros([self.batch_size, 1, 1, args.n_poses*self.motion_window_length]) < 1).to(self.device)
         self.mask_test = (torch.zeros([1, 1, 1, args.n_poses]) < 1).to(self.device)
@@ -78,30 +96,21 @@ class TrainLoop:
 
         self.cond_labels = args.agent_labels
 
-    # def _load_and_sync_parameters(self):
-    #     resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
-    #
-    #     if resume_checkpoint:
-    #         self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
-    #         logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
-    #         self.model.load_state_dict(
-    #             dist_util.load_state_dict(
-    #                 resume_checkpoint, map_location=self.device
-    #             )
-    #         )
+    def _load_and_sync_parameters(self):
 
-    # def _load_optimizer_state(self):
-    #     main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
-    #     opt_checkpoint = bf.join(
-    #         bf.dirname(main_checkpoint), f"opt{self.resume_step:09}.pt"
-    #     )
-    #     if bf.exists(opt_checkpoint):
-    #         logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
-    #         state_dict = dist_util.load_state_dict(
-    #             opt_checkpoint, map_location=self.device
-    #         )
-    #         self.opt.load_state_dict(state_dict)
+        logger.log(f"Loading model from checkpoint: {self.resume_checkpoint}...")
+        self.model.load_state_dict(torch.load(self.resume_checkpoint))
 
+    def _load_optimizer_state(self):
+        # main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
+
+        opt_checkpoint = bf.join(
+            bf.dirname(self.resume_checkpoint), f"opt{self.resume_step:09}.pt"
+        )
+        assert bf.exists(opt_checkpoint), f"Couldn't find optimizer at '{opt_checkpoint}'"
+        logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
+        state_dict = torch.load(opt_checkpoint)
+        self.opt.load_state_dict(state_dict)
 
     def run_loop(self):
 
@@ -128,7 +137,6 @@ class TrainLoop:
                     wavlm = text_audio[person]
                     id = style[person]
 
-                    # DONE: Change name to style otherwise subscripting at every person --> interlocutor does not receives style correctly
                     # pack person data into cond_
                     label = self.cond_labels[person]
                     cond_[label] = {}
@@ -138,6 +146,8 @@ class TrainLoop:
                     elif person == 'interloctr':
                         # for interloctr let's take last code gesture so far
                         cond_[label]['seed'] = motion[..., -self.n_seed:]
+                    # cond_[label]['seed'] = motion[..., :self.n_seed]
+
                     cond_[label]['gesture'] = motion
                     cond_[label]['style'] = id.to(self.device, non_blocking=True)
                     cond_[label]['mask_local'] = self.mask_local_train
@@ -147,23 +157,6 @@ class TrainLoop:
                     if person == 'main-agent':
                         motion_gt = gesture_gt[person].permute(0, 2, 1).unsqueeze(2).to(self.device, non_blocking=True)
                         cond_[label]['motion_gt'] = motion_gt  # train diffusion with GT motion (and not features)
-
-                """
-                # previous monadic main-agent implementation
-                text_audio, gesture, gesture_gt, style = batch
-                cond_ = {'y':{}}     
-                # main agent cond_
-                cond_['y']['seed'] = motion[..., 0:self.n_seed]
-                # cond_['y']['seed_last'] = motion[..., -self.n_seed:]        # attention5
-                cond_['y']['style'] = style.to(self.device, non_blocking=True)
-                cond_['y']['mask_local'] = self.mask_local_train
-                # cond_['y']['audio'] = wavlm.to(torch.float32).to(self.device, non_blocking=True)      # attention3
-                cond_['y']['audio'] = 
-                # cond_['y']['audio'] = wavlm.to(torch.float32)[:, self.n_seed:-self.n_seed].to(self.device, non_blocking=True)  # attention5
-                cond_['y']['mask'] = self.mask_train              # [..., self.n_seed:]
-                cond_['y']['mask_gt'] = self.mask_train_gt        # same as up but adapted to work with
-                cond_['y']['motion_gt'] = motion_gt               # train diffusion with GT motion (and not features)
-                """
 
                 self.run_step(batch=motion, cond=cond_)
                 if self.step % self.log_interval == 0:

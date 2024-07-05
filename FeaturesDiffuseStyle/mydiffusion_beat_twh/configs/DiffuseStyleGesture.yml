@@ -4,14 +4,14 @@
 
 # === TO BE CHANGED FROM ONE MODEL TO ANOTHER ===
 
-h5file: "data/trn_features_with_wavlm/TWH-trn_with_wavlm.h5"   # "../process/speaker_2_10_v0.h5"
+h5file: "../../data/trn_features_with_wavlm/TWH-trn_with_wavlm.h5"   # "../process/speaker_2_10_v0.h5"
 dataset: "trn"
 name: "FeaturesDiffuseStyle"          # "FeaturesDiffuseStyle", "DiffuseStyleGesture", "DiffuseStyleGesture+"
 version: "v0_dyadic"                         # "v0", "v0_dyadic"
 save_dir: "../results"
 max_num_steps: 5000000                # max reached during training of thesis pipeline
-save_iters: 200000                    # To avoid too many checkpoints
-description: "_wavlm"                 # To describe the directory where we are going to store model's checkpoints
+save_iters: 100000                    # To avoid too many checkpoints
+description: "_wavlm_noxi"                 # To describe the directory where we are going to store model's checkpoints
 
 # === OTHER PARAMETERS ===
 
