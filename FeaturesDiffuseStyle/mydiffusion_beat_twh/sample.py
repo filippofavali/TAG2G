@@ -265,10 +265,6 @@ def inference(args, data, prefix, sample_fn, model, n_features=0, smoothing=Fals
 
                 textaudio = textaudio.reshape(num_subdivision, stride_poses, args.motion_window_length,
                                               args.audio_feature_dim).transpose(0, 1)
-                """
-                textaudio = textaudio.reshape(num_subdivision, args.n_poses, args.motion_window_length,
-                                              args.audio_feature_dim).transpose(0, 1)
-                """
 
                 # If main agent textaudio from current subdivision, seed is first n_seed gesture from known gesture (file)
                 if speaker == 'main-agent':

@@ -125,11 +125,11 @@ class MDM(nn.Module):
                     self.embed_style = nn.Linear(style_dim, self.style_dim)
                     self.embed_text = nn.Linear(self.njoints, self.audio_feat_dim)
                     if self.model_version == 'dyadic':
-                        self.inter_input_process = nn.Linear(self.inter_njoints, self.audio_feat_dim)   # 256 -> 128
+                        self.inter_input_process = nn.Linear(self.inter_njoints, self.audio_feat_dim//4)   # 256 -> 32
                         self.inter_Wav_encoder = WavEncoder(self.mfcc_dim, self.motion_window_length,
                                                             self.audio_feat_dim)    # (7, 18, 40) -> [7, 128]
-                        # OLD BUT CAN BE INTERESTING
-                        # self.dyadic_input_process = nn.Linear(self.latent_dim + 2 * self.audio_feat_dim, self.latent_dim)
+                        self.inter_input_process2 = nn.Linear(self.latent_dim+self.audio_feat_dim+self.audio_feat_dim//4,
+                                                              self.audio_feat_dim)
                         self.dyadic_input_process = nn.Linear(self.latent_dim+self.audio_feat_dim, self.latent_dim)
                 elif 'cross_local_attention5' in self.cond_mode:
                     self.style_dim = self.latent_dim
@@ -248,23 +248,20 @@ class MDM(nn.Module):
             x_ = self.input_process(x)                                                  # [b, 768, 1, 8] -> [8, b, 512]
             xi = y['y_inter1']['gesture'].reshape(bs, njoints * nfeats, 1, nframes)     # [b, 768, 1, 8]
             # taking only the last cluster item from interlocutor's gesture
-            xi = xi[:, :self.inter_njoints, : , :1].permute(3, 0, 1, 2).reshape(1, bs, self.inter_njoints)   # [1, b, 256]
-            xi_ = self.inter_input_process(xi)                                          # [1, b, 128]
+            xi = xi[:, :self.inter_njoints, : , -1:].permute(3, 0, 1, 2).reshape(1, bs, self.inter_njoints)   # [1, b, 256]
+            xi_ = self.inter_input_process(xi)                                          # [1, b, 32]
 
             # OLD IMPLEMENTATION BUT CAN BE INTERESTING AFTER
-            # xi_ = torch.tile(xi_, (nframes, 1, 1))                                    # [8, b, 128]
+            xi_ = torch.tile(xi_, (nframes, 1, 1))                                    # [8, b, 32]
 
             # ID encoding
             force_mask = y.get('uncond', False)  # Default to false, 'uncond' not introduced in _cond
 
-            # embed_style_1 = self.mask_cond(self.embed_style(y['y']['style']), force_mask=force_mask)  # [bs, 512], (bs, 17)
-            # embed_style_12 = (embed_style_1 + emb_t).repeat(nframes, 1, 1)  # [bs, 512] --> [8, b, 512]
-            # embed_style_2 = self.mask_cond(self.embed_style(y['y_inter1']['style']), force_mask=force_mask)
-            # embed_style_dyadic = (embed_style_1+embed_style_2+emb_t).repeat(nframes, 1, 1)  # [bs, 512] --> [8, b, 512]
-
             # [bs, 512], (bs, 17)
-            embed_style = self.mask_cond(self.embed_style(y['y']['style'] + y['y_inter1']['style']), force_mask=force_mask)
+            embed_style = self.mask_cond(self.embed_style(y['y']['style']), force_mask=force_mask)
             embed_style_1 = (embed_style + emb_t).repeat(nframes, 1, 1)  # [bs, 512] --> [8, b, 512]
+            embed_style_int = self.mask_cond(self.embed_style(y['y_inter1']['style']), force_mask=force_mask)
+            embed_style_int_1 = (embed_style_int + emb_t).repeat(nframes, 1, 1)  # [bs, 512] --> [8, b, 512]
 
             # Seed and conversation main agent
             embed_text_1 = self.embed_text(y['y']['seed'].squeeze(2).permute(0, 2, 1)).permute(1, 0, 2)  # [1, b, 128], (b, 1, 768)
@@ -273,26 +270,26 @@ class MDM(nn.Module):
 
             # Conversation and last cluster used by interlocutor
             # 'audio' is 1434 features len: audio 108+1024(wavlm), text encoding 302
-            enc_text_2 = y['y_inter1']['audio'][..., :108]
+            enc_text_2 = y['y_inter1']['audio'][..., :108]                          # only mel-spectogram, MFCC, prosody
+            embed_text_2 = self.embed_text(y['y_inter1']['seed'].squeeze(2).permute(0, 2, 1)).permute(1, 0, 2)  # [1, b, 128], (b, 1, 768)
             enc_text_2 = self.inter_Wav_encoder(enc_text_2).permute(1, 0, 2)        # [7, b, 128]
-            enc_text_2 = torch.cat((xi_, enc_text_2), dim=0)        # [8, b, 128]
-
-            xseq_1 = torch.cat((x_, enc_text_1), dim=2)  # [8, b, 640], ((8, b, 512), (8, b, 128))
-            # THIS MIGHT BE NEXT IMPLEMENTATION TO COME WITH A INPUT PROCESS 2 FOR INTERLOCUTOR
-            # xseq_2 = torch.cat((xi_, enc_text_2), dim=2)  # [8, b, 256], ((8, b, 128), (8, b, 128))
-            # # xseq_2 = enc_text_2     # using both conversation and xi_ last gesture
+            enc_text_2 = torch.cat((embed_text_2, enc_text_2), dim=0)                 # [8, b, 128]
 
             # Prepare all frames for cross local attention
+            xseq_2 = torch.cat((enc_text_2, embed_style_int_1, xi_), dim=2)   # [8, b, 128+512+32]
+
+            xseq_1 = torch.cat((x_, enc_text_1), dim=2)  # [8, b, 640], ((8, b, 512), (8, b, 128))
             xseq_1 = torch.cat((embed_style_1, xseq_1), dim=2)     # [8, b, 1152]      # ablation style dyadic
 
             # Input process after conversation, ID and seed encoding
-            xseq_1 = self.input_process2(xseq_1).permute(1, 0, 2)          # [b, 8, 512]
+            xseq_1 = self.input_process2(xseq_1).permute(1, 0, 2)                   # [b, 8, 512]
+            xseq_2 = self.inter_input_process2(xseq_2).permute(1, 0, 2)             # [b, 8, 128]
 
             # Need to build a conversational input from dyadic setup
-            xseq = torch.cat((xseq_1, enc_text_2.permute(1, 0, 2)), dim=2)       # [b, 8, 768]    # ablation
+            xseq = torch.cat((xseq_1, xseq_2), dim=2)       # [b, 8, 512+128]
 
             # Here needs to mix both data from main-agent and interloctr
-            xseq = self.dyadic_input_process(xseq)                                        # [b, 8, 512], (b, 8, 1024)
+            xseq = self.dyadic_input_process(xseq)                                        # [b, 8, 512], (b, 8, 640)
 
             xseq = xseq.view(bs, nframes, self.num_head, -1)                              # [b, 8, 8, 64]
             # need [b, n.head, frames, data] to multi-head compute cross local attention
@@ -309,7 +306,7 @@ class MDM(nn.Module):
             xseq = xseq.permute(1, 0, 2)                                                   # [8, b, 512]
 
             # Prepare for transformer encoding
-            xseq = torch.cat((embed_style + emb_t, xseq), dim=0)                  # [1+8, b, 512]
+            xseq = torch.cat((embed_style + emb_t, xseq), dim=0)                    # [1+8, b, 512]
             transf_d = xseq.shape[0]                                                       # transformer dimension
             xseq = xseq.permute(1, 0, 2)                                             # [b, 9, 512]
             xseq = xseq.view(bs, transf_d, self.num_head, -1)                              # [b, 9, 8, 64]
@@ -532,57 +529,8 @@ def serial_printer(data):
         for key2, value in dict.items():
             print(f"{key1}: {key2} shape {value.shape}")
 
+
 if __name__ == '__main__':
-
-    '''
-    cd ./BEAT-main/model
-    python mdm.py
-    '''
-
-    """
-    # FORMER TEST FROM ORIGINAL mdm PAPER:
-    # 1.1 same test
-    # 1.2 introduced 3rd shape = 18 in audio --> still works
-
-    n_frames = 150
-    n_seed = 30
-    njoints = 684 * 3
-    audio_feature_dim = 1133 + 301  # audio_f + text_f
-    style_dim = 2
-    bs = 2
-
-    # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    device = torch.device('cpu')
-    model = MDM(modeltype='', njoints=njoints, nfeats=1, cond_mode='cross_local_attention4_style1', audio_feat='wavlm',
-                arch='trans_enc', latent_dim=512, n_seed=n_seed, cond_mask_prob=0.1,
-                style_dim=style_dim, source_audio_dim=audio_feature_dim, audio_feat_dim_latent=128).to(device)
-
-    x = torch.randn(bs, njoints, 1, n_frames)
-    t = torch.tensor([12, 85])
-
-    model_kwargs_ = {'y': {}}
-    model_kwargs_['y']['mask'] = (torch.zeros([1, 1, 1, n_frames]) < 1)  # [..., n_seed:]
-    # model_kwargs_['y']['audio'] = torch.randn(bs, n_frames - n_seed - n_seed, audio_feature_dim)  # attention5
-    model_kwargs_['y']['audio'] = torch.randn(bs, n_frames - n_seed, 18,audio_feature_dim)       # attention4
-    # model_kwargs_['y']['audio'] = torch.randn(bs, n_frames, audio_feature_dim)  # attention3
-    model_kwargs_['y']['style'] = torch.randn(bs, style_dim)
-    model_kwargs_['y']['mask_local'] = torch.ones(bs, n_frames).bool()
-    model_kwargs_['y']['seed'] = x[..., 0:n_seed]  # attention3/4
-    model_kwargs_['y']['seed_last'] = x[..., -n_seed:]  # attention5
-    model_kwargs_['y']['gesture'] = torch.randn(bs, n_frames, njoints)
-    y = model(x, t, model_kwargs_['y'])  # [bs, njoints, nfeats, nframes]
-    print(y.shape)
-    """
-
-    """
-    # pre test on dimensions
-    conv1 = torch.ones((2, 8, 512))
-    conv2 = 2 * torch.ones((2, 8, 512))
-    conv = torch.cat((conv1.unsqueeze(3), conv2.unsqueeze(3)), axis=3)
-    conv = conv.view(2, 8, 8, -1)
-    print(f"Conv test shape: {conv.shape}")
-    print(conv[1, 1, ...])
-    """
 
     from time import perf_counter
 
@@ -617,7 +565,6 @@ if __name__ == '__main__':
     for label in labels:
 
         agent_kwargs_ = {}
-
         agent_kwargs_['mask'] = (torch.zeros([1, 1, 1, n_frames]) < 1)     # [..., n_seed:]
         # model_kwargs_['y']['audio'] = torch.randn(bs, n_frames - n_seed - n_seed, audio_feature_dim)  # attention5
         agent_kwargs_['audio'] = torch.randn(bs, n_frames - n_seed, t_frame, audio_feature_dim)         # attention4
