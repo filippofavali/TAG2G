@@ -95,3 +95,5 @@ Or, you can resume past training from ../TAG2G/FeaturesDiffuseStyle/results/...
 
 Change accordingly both tst_path, model_path, and tst_prefix; be sure to have val dataset featurized using Featurization over both
 trn and val dataset (change in the FeaturesConfig.py the parameter dataset_root to val one in your dataset folder)
+
+Video results at: https://youtu.be/I88TvQa9KGo
