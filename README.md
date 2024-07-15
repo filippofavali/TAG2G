@@ -1,10 +1,25 @@
-# Full pipeline commands 
 
+# Starting from a previously trained arcitecture
+
+You can find pretrained VQVAE and diffusion model checkpoints at: 
+1. create a folder TAG2G/data/
+2. put val_features_with_wavlm into that data folder
+3. VQVAE checkpoint goes to your_path/TAG2G/VQVAE/results/your_checkpoint_here.ckpt
+4. diffusion model checkpoint goes to your_path/TAG2G/FeaturesDiffuseStyle/results/modelAAABBBCCC.pt 
+5. diffusion model's hyperparameters.yml file goes to your_path/TAG2G/FeaturesDiffuseStyle/results/hyperparameters.yml
+6. Run inference as per below
+
+    cd yout_path/TAG2G/FeaturesDiffuseStyle/mydiffusion/
+    python sample.py --tst_path data/val_features_with_wavlm --model_path ../results/modelAAABBBCCC.pt --save_path ../..data/generated_samples/ --use_inter_clusters
+
+# Instructions to train your own architecture
+
+Full pipeline commadns
 1. Preprocess data and train VQVAE
 2. Data featurization (gesture, audio, text)
 3. Train diffusion model
-4. Inference time diffusion model 
-
+4. Inference time diffusion model
+   
 # VQVAE (preprocess dataset and train)
 
     cd VQVAE
@@ -25,6 +40,11 @@ cd ../Featurization
 (before running featurization command look into Featurization/Config/FeaturesConfig.py and update all links to yours)
 
     python FeatureEmbedding.py
+
+Once you get your TWH-trn_with_wavlm.h5 file, you can convert it into TWH-trn_with_wavlm_16KMeans.h5 run 
+
+    cd data/trn_features_with_wavlm
+    python match_kmeans.py
 
 #TODO: Optimize this with a projecct dir input in the call of the .py and parametrize everything on it in featuresConfig() 
 also to produce both val and trn dataset features at call and not cahnging parameters into FeaturesConfig.py
