@@ -1,5 +1,5 @@
 
-# Starting from a previously trained arcitecture
+# Starting from a previously trained architecture
 
 You can find pretrained VQVAE and diffusion model checkpoints at: https://drive.google.com/drive/folders/1LSLx2gY_c7lOv6oFXxfJXeftp9oaPm9y?usp=drive_link
 1. create a folder TAG2G/data/
@@ -11,6 +11,8 @@ You can find pretrained VQVAE and diffusion model checkpoints at: https://drive.
 
     cd yout_path/TAG2G/FeaturesDiffuseStyle/mydiffusion/
     python sample.py --tst_path data/val_features_with_wavlm --model_path ../results/modelAAABBBCCC.pt --save_path ../..data/generated_samples/ --use_inter_clusters
+
+You can find videos of results at: https://youtu.be/I88TvQa9KGo
 
 # Instructions to train your own architecture
 
