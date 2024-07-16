@@ -1,7 +1,7 @@
 
 # Starting from a previously trained arcitecture
 
-You can find pretrained VQVAE and diffusion model checkpoints at: 
+You can find pretrained VQVAE and diffusion model checkpoints at: https://drive.google.com/drive/folders/1LSLx2gY_c7lOv6oFXxfJXeftp9oaPm9y?usp=drive_link
 1. create a folder TAG2G/data/
 2. put val_features_with_wavlm into that data folder
 3. VQVAE checkpoint goes to your_path/TAG2G/VQVAE/results/your_checkpoint_here.ckpt
